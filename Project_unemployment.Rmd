@@ -1,0 +1,290 @@
+---
+title: "Canadian Unemployment"
+author: "David Rucinski"
+date: "April 1, 2019"
+output: pdf_document
+---
+
+```{r include=FALSE}
+knitr::opts_chunk$set(comment = NA)
+```
+
+```{r}
+# Source:
+# Organization for Economic Co-operation and Development, Unemployment Rate: Aged 15 and Over: All Persons 
+# for Canada [LRUNTTTTCAM156N], retrieved from FRED, Federal Reserve Bank of St. Louis; 
+# https://fred.stlouisfed.org/series/LRUNTTTTCAM156N, June 11, 2019. 
+# 
+# 
+# OECD, "Main Economic Indicators - complete database", Main Economic Indicators 
+# (database),http://dx.doi.org/10.1787/data-00052-en April 1, 2019
+# Copyright, 2016, OECD. Reprinted with permission.
+```
+
+#Packages and Loading the Data
+```{r, message = FALSE, warning=FALSE}
+library("tseries")
+library("astsa")
+library("TSA")
+library("fGarch")
+library("forecast")
+
+test <- read.csv("LRUNTTTTCAM156N.csv", header = TRUE, stringsAsFactors = FALSE)
+class(test)
+
+
+unemploy.data <- ts(data=test$LRUNTTTTCAM156N, frequency = 12, start=c(1960,1), end=c(2019,3))
+class(unemploy.data)
+
+# colnames(unemploy.data) <- c("observation_date", "unemployment rate %")
+rm(test)
+
+```
+Reading in the data from an excel file and converting to xts ran into some issues later as the xts data didn't work with certian functions. I grabbed a CVS file from the source website and created a ts object indexed appropriately.
+
+
+#A Look at the Data
+```{r, fig.width = 15, fig.height = 12}
+
+plot(unemploy.data, ylab = "Unemployment rate %", main = "Canadian Unemployment rate(%)")
+points(unemploy.data, pch = as.vector(season(unemploy.data)))
+
+
+
+
+# ggplot to show recession on plot
+# library(zoo)
+# library(ggplot2)
+# 
+# begin <- c(1960,1974,1981,1990,2007)
+# end   <- c(1961,1975,1982,1992,2009)
+# 
+# recess <- data.frame(begin,end)
+# 
+# df_plot <- data.frame(x = unemploy.data, time = time(unemploy.data))
+# 
+# ggplot(df_plot, aes(x = time, y = x ) ) +
+#   geom_rect(data = recess,
+#             aes(xmin = begin,
+#                 xmax = end,
+#                 ymin = -Inf,
+#                 ymax = +Inf),
+#             inherit.aes = FALSE, fill = "red", alpha = 0.2) +
+#   geom_line()
+
+
+
+```
+First glance there's no constant variance or mean, we have a non-stationary process. We need to stablize the variance and get something stationary. Since it is an unemployment rate does this include seasonal and contract jobs? If there is a seasonal trend we should take a difference of some lag. Then fit a model and see if we can forecast.
+
+#First Difference Plot
+```{r, fig.width = 15, fig.height = 12}
+
+
+
+
+plot(diff(unemploy.data), ylab = "Difference",main = "Canadian Unemployment rate(%):
+     First Difference")
+
+
+
+```
+(First difference)
+Looks to be a bit more stable with constant mean, the variance still jumps. The peaks for the unemployment rate percent that really stick out are 1974, 1990, 2008. Which happen to be the dates of Canadian recessions. 
+
+
+#Percent Change
+```{r, fig.width = 15, fig.height = 12}
+
+percent.change <- diff(unemploy.data)/unemploy.data
+
+plot(percent.change, ylab = "Percent Change", 
+     main = "Monthly unemployment rate (%) change")
+points(percent.change, pch = as.vector(season(unemploy.data)))
+```
+
+December has the greatest increase for unemployment rate and April has a decrease. A Particular trend we could say accounts for seasonal jobs, e.g. construction is stopped for the winter months.
+
+
+
+
+#ACF/PACF & Seasonal Testing
+```{r, fig.width = 15, fig.height = 12}
+
+par(mfrow = c(2,2), mar = c(4,5,3,3))
+
+
+acf(as.vector(unemploy.data), lag.max = 324)
+pacf(as.vector(unemploy.data), lag.max = 324)
+
+
+acf(as.vector(unemploy.data), lag.max = 700)
+pacf(as.vector(unemploy.data), lag.max = 700)
+
+
+month. <- season(unemploy.data)
+model <- lm(unemploy.data~month.-1)
+summary(model)
+
+#plot(model) in the console will give inverse AR and MA roots on the unit circle [neat!]
+```
+Interesting, there are a lot less significant lags with the PACF. Certainly no simple models, the ACF seems to tail of in a cyclical fashion with a definite seasonal component. Let us check the first difference ACF/PACF.
+
+
+#ACF/PACF of the First Difference
+```{r, fig.width = 15, fig.height = 12}
+
+par(mfrow = c(2,2), mar = c(4,5,3,3))
+
+acf(as.vector(diff(unemploy.data)), lag.max = 50)
+pacf(as.vector(diff(unemploy.data)), lag.max = 50)
+
+
+acf(as.vector(diff(unemploy.data)), lag.max = 324)
+pacf(as.vector(diff(unemploy.data)), lag.max = 324)
+```
+Still tailing off in the ACF plot, though the cyclical pattern is removed. There is a seasonal trend present with a period of 12. PACF has some significant lags before 10, but there is also a significant seasonal trend present as well.
+
+
+#Trying Models
+```{r}
+
+# I tried a nested for loop to compute a large number of models, but could not save them
+# in an object to use a minimum function on the list. Also with some combinations there 
+# were errors with infinity, so using previous ACF/PACF plots I over fit the data and worked down.
+
+arima(unemploy.data, order = c(1,1,1), seasonal = list(order = c(4,0,1), period = 12))$aic
+arima(unemploy.data, order = c(1,1,1), seasonal = list(order = c(5,0,1), period = 12))$aic
+arima(unemploy.data, order = c(1,1,1), seasonal = list(order = c(5,0,0), period = 12))$aic
+arima(unemploy.data, order = c(1,1,1), seasonal = list(order = c(4,0,0), period = 12))$aic
+arima(unemploy.data, order = c(1,1,1), seasonal = list(order = c(3,0,0), period = 12))$aic
+arima(unemploy.data, order = c(1,1,1), seasonal = list(order = c(1,0,1), period = 12))$aic
+arima(unemploy.data, order = c(1,1,1), seasonal = list(order = c(1,0,2), period = 12))$aic
+
+#   Taking a look at different models, and then choosing where Ljung-Box is not rejected
+#   we get :  sarima(unemploy.data, 1,1,1, 1,0,1, S = 12)
+```
+**Using minimum AIC to select a model**
+AIC minimum is 184.82 so I will use that model, i.e. ARIMA(1,1,1)x(1,0,1)_S=12
+
+Through some checking with the sarima() function I have found a handful of models with relatively low AIC and fail to reject Ljung-Box test. Ljung-box is testing to see if the residuals when grouped together behave as white noise at certain lags.
+
+
+#Fitting the Model
+```{r, fig.width = 15, fig.height = 12}
+model <- arima(unemploy.data, order = c(1,1,1), seasonal = list(order = c(1,0,1), 
+                                                                period = 12))
+
+model.resid <- model$residuals
+
+
+par(mfrow = c(3,2))
+
+acf(as.vector(model.resid), lag.max = 324)
+pacf(as.vector(model.resid), lag.max = 324)
+
+
+acf(as.vector(model.resid^2), lag.max = 324)
+pacf(as.vector(model.resid^2), lag.max = 324)
+
+
+acf(as.vector(abs(model.resid)), lag.max = 324)
+pacf(as.vector(abs(model.resid)), lag.max = 324)
+
+
+```
+ACF of the residuals looks good with few significant lags, but with further investigation taking the absolute values and squared values of the residuals we see that they are not behaving as white noise. Thus the residuals will not be independent. Since the variance varies for the residuals we should probably fit a GARCH model.
+
+```{r, fig.width = 15, fig.height = 12}
+qqnorm(model.resid)
+qqline(model.resid)
+```
+Residuals are approximately normal with tail behaviour, lets continue for fitting a GARCH model.
+
+
+
+#Testing for ARCH Effects
+```{r}
+McLeod.Li.test(model, main = "McLeod-Li Test")
+```
+
+The null hypothesis of the McLeod-Li test is that there is no autoregressive conditional heteroskedasticity (ARCH) among the lags. Therefore we reject the null hypothesis at 5% level of significance, there are ARCH effects present.
+
+
+#Fitting a GARCH Model to Transformed Data
+```{r, include=FALSE}
+fit <- garch(diff(diff(unemploy.data),12), order = c(1,1)) 
+#do not need the output, returns everything even if you store in an object
+```
+If we can fit a GARCH model and have the residuals behave as white noise, then we can account for the ARCH effects.
+
+#Checking the fit of GARCH(1,1)
+```{r}
+summary(fit)
+
+fit.resid <- fit$residuals
+
+# see plot(fit), need some time to play with setting to get it right.
+```
+The GARCH(1,1) model seems to be significant for the seasonal first difference model.
+
+
+#Residual Analysis of GARCH(1,1) on Transformed Data
+```{r, fig.width = 15, fig.height = 12}
+qqnorm(fit.resid)
+qqline(fit.resid)
+
+resid.fit.model <- fit.resid[-1]
+```
+Very odd straight line horizontally but is approximately normal with tail behaviour, especially compared to a GARCH(1,1) on the original data or the first difference. 
+
+
+#ACF/PACF of GARCH Residuals
+```{r, fig.width = 15, fig.height = 12}
+
+par(mfrow = c(2,2), mar = c(4,5,3,3))
+
+acf(resid.fit.model, lag.max = 50)
+pacf(resid.fit.model, lag.max = 50)
+
+acf(resid.fit.model^2, lag.max = 50)
+pacf(resid.fit.model^2, lag.max = 50)
+
+```
+ACF seems fairly good with the exception at lag 1 & 12, the PACF on the other hand have a couple significant lags. Although on the squared residuals it does seem to behave more as white noise again with the exception of lag 12. As if the residuals themselves have a seasonal moving average (MA) component, so lets fit a ARMA + GARCH model.
+
+#Final Model with ARMA and GARCH
+```{r, include=FALSE}
+
+#                Included: . . .    . .         
+#    sarima(unemploy.data, 1,1,1, 1,0,1, S = 12)
+#                 Missing:        ^          ^
+
+trans.data <- diff(diff(unemploy.data), lag = 12)
+#   first and seasonal difference in transformed data
+#   but still need to incorporate a seasonal component.
+#   I tried rugarch & bsts packages to add in a seasonal component unsuccessfully
+#   garchFit does not allow arima or sarima objects in the function
+
+out <- garchFit(~ arma(1,1) + garch(1,1), data = trans.data )
+```
+
+```{r}
+summary(out)
+```
+All parameters are significant but the residual analysis of this model shows that they are not normal, and do not behave as white noise after lag 10. That is the residuals are not independent.
+
+Although I could not fit a SARIMA + GARCH model, I would suggest to fit that model and test the residuals for white noise and normality. Since it seems to have a variance that is dependent on time, forecasting values may give a wide interval. There are also external factors that will impact the unemployment rate in Canada, recessions and innovation to name a couple. Thus the final model may be quite complex when including such factors.
+
+
+
+```{r, fig.width = 15, fig.height = 12}
+plot(forecast(unemploy.data, model = model), ylab = "Unemployment rate %", main = "Canadian Unemployment rate(%)
+      Forecast")
+
+
+```
+A forecast of the SARIMA, it may not be as accurate since this does not include the ARCH effects.
+
+
+
