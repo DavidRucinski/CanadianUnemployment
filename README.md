@@ -1,2 +1,2 @@
-# CanadianUnemployment
-[TimeSeries] looking at Canadian unemployment rate
+# CanadianUnemployment Project
+A project was given for my time series course, the data was looking at Canadian unemployment rate. Using techniques and theory we learnt during the course was applied here. Accounting for different types of a effects on the time series I made a model and tried to predict future values. Although there was a limitation on my R programming skills and theory to implement such I gave suggestions on the type of model it could be with evidence.
